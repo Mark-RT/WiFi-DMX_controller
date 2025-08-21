@@ -24,31 +24,118 @@ enum kk : size_t
     rainbow_sw,
 
     main_bright_sld,
-    palitra1_sld,
-    palitra2_sld,
+    palitra1_clr,
+    palitra2_clr,
     white_sld,
     rainbow_sld,
-
-    strobe_btn,
     strobe_sld,
 };
 
+void setDMXColor(int startChannel, uint32_t color) {
+  dmx.write(startChannel,     (color >> 16) & 0xFF);  // R
+  dmx.write(startChannel + 1, (color >> 8)  & 0xFF);  // G
+  dmx.write(startChannel + 2,  color        & 0xFF);  // B
+  dmx.update();
+}
+
 // билдер! Тут строится наше окно настроек
-void build(sets::Builder &b)
-{
+void build(sets::Builder &b) {
+     // можно узнать, было ли действие по виджету
+    if (b.build.isAction()) {
+        Serial.print("Set: 0x");
+        Serial.print(b.build.id, HEX);
+        Serial.print(" = ");
+        Serial.println(b.build.value);
+
+        switch(b.build.id) {
+            case 0xFFFFFFFE:
+                Serial.print("Reset: ");
+                Serial.println(b.build.pressed());
+                break;
+
+            case 0x1:
+                Serial.print("Білий: ");
+                Serial.println(b.build.pressed());
+                break;
+
+            case 0x2:
+                Serial.print("Радуга: ");
+                Serial.println(b.build.pressed());
+                break;
+
+            case 0x3:
+                Serial.print("Гол.яскрав: ");
+                Serial.println(b.build.value);
+                break;
+
+            case 0x4:
+                Serial.print("Палітра 1: ");
+                Serial.println(b.build.value);
+                break;
+
+            case 0x5:
+                Serial.print("Палітра 2: ");
+                Serial.println(b.build.value);
+                break;
+
+            case 0x6:
+                Serial.print("Білий: ");
+                Serial.println(b.build.value);
+                break;
+
+            case 0x7:
+                Serial.print("Радуга: ");
+                Serial.println(b.build.value);
+                break;
+
+            case 0x8:
+                Serial.print("Стробоскоп: ");
+                Serial.println(b.build.value);
+                break;
+        }
+    }
 
     if (b.beginRow("", sets::DivType::Block))
     {
-        if (b.Button("Reset"))
-        {
-            Serial.print("Reset: ");
-            Serial.println(b.build.pressed());
-        }
+        b.Button("Reset");
         b.Switch(kk::white_sw, "Білий");
         b.Switch(kk::rainbow_sw, "Радуга");
+        //Serial.println(db[kk::white_sw]);
+        //Serial.println(db[kk::rainbow_sw]);
         b.endRow();
     }
+
+    if (b.beginRow()) {
+        b.Slider(kk::main_bright_sld, "Головна яскравість", 0, 255, 1);
+        b.endRow();
+    }
+
+    if (b.beginRow()) {
+        b.Color(kk::palitra1_clr, "Палітра 1");
+        b.endRow();
+    }
+
+    if (b.beginRow()) {
+        b.Color(kk::palitra2_clr, "Палітра 2");
+        b.endRow();
+    }
+
+    if (b.beginRow()) {
+        b.Slider(kk::white_sld, "Білий", 0, 255, 1);
+        b.endRow();
+    }
+
+    if (b.beginRow()) {
+        b.Slider(kk::rainbow_sld, "Радуга", 211, 255, 1);
+        b.endRow();
+    }
+    if (b.beginRow()) {
+        b.Slider(kk::strobe_sld, "Стробоскоп", 0, 255, 5);
+        b.endRow();
+    }
+
 }
+
 
 void setup()
 {
@@ -82,7 +169,7 @@ void setup()
     // ======== SETTINGS ========
     sett.begin();
     sett.onBuild(build);
-    sett.onUpdate(update);
+    //sett.onUpdate(update);
 
     sett.onFocusChange([]()
                        {
@@ -93,7 +180,7 @@ void setup()
     // sett.config.requestTout = 3000;
     // sett.config.sliderTout = 500;
     // sett.config.updateTout = 1000;
-    // sett.config.theme = sets::Colors::Green;
+    sett.config.theme = sets::Colors::Black;
 
     // ======== DATABASE ========
 #ifdef ESP32
@@ -110,14 +197,13 @@ void setup()
     db.init(kk::rainbow_sw, 0);
 
     db.init(kk::main_bright_sld, 60);
-    db.init(kk::palitra1_sld, 800);
-    db.init(kk::palitra2_sld, 50);
+    db.init(kk::palitra1_clr, 0xff0000);
+    db.init(kk::palitra2_clr, 0xff0000);
     db.init(kk::white_sld, 0);
     db.init(kk::rainbow_sld, 211);
 
-    db.init(kk::strobe_btn, 0);
     db.init(kk::strobe_sld, 0);
-
+    
     // db.dump(Serial);
 
     // часовой пояс для rtc
