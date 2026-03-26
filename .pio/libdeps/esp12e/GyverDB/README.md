@@ -120,6 +120,9 @@ bool init(const Text& key, DATA data);
 bool update(size_t hash, DATA data);
 bool update(const Text& key, DATA data);
 
+// подключить обработчик создания и изменения значения записи вида void f(size_t hash)
+void onChange(ChangeCallback cb);
+
 // использовать стек обновлений (умолч. false)
 void useUpdates(bool use);
 
@@ -195,8 +198,6 @@ Bin
 ```
 
 ### Entry
-> Наследует класс [Text](https://github.com/GyverLibs/StringUtils?tab=readme-ov-file#text) для более удобного чтения строк
-
 ```cpp
 // тип ячейки
 gdb::Type type();

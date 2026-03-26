@@ -23,6 +23,7 @@
 > Есть приложение для поиска устройств с библиотекой в локальной сети:
 > - [Android](https://github.com/GyverLibs/Settings-discover)
 > - [Windows](https://github.com/TonTon-Macout/APP-for-AlexGyver-Settings)
+> - iOS: [AppStore](https://apps.apple.com/us/app/gyver-settings/id6751504764) | [Репозиторий](https://github.com/Vl-VSV/Gyver-Settings)
 
 ![promo](/img/promo.png)
 
@@ -33,7 +34,7 @@
 ESP8266, ESP32
 
 > [!CAUTION]
-> Подключение в проект библиотеки FastLED версии старше [3.7.8](https://github.com/GyverLibs/Settings/issues/35#issuecomment-2691839527) ломает вебсервер! Ждём фиксов со стороны ESP или FastLED
+> **ESP8266** Подключение в проект библиотеки FastLED версии старше [3.7.8](https://github.com/GyverLibs/Settings/issues/35#issuecomment-2691839527) ломает вебсервер! Ждём фиксов со стороны ESP или FastLED
 
 ### Зависимости
 - [GTL](https://github.com/GyverLibs/GTL) v1.3.0+

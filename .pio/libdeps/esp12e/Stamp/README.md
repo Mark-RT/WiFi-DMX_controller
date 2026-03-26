@@ -101,8 +101,8 @@ uint8_t day;        // день месяца (1.. 28-31)
 uint8_t hour;       // час (0.. 23)
 uint8_t minute;     // минута (0.. 59)
 uint8_t second;     // секунда (0.. 59)
-uint8_t weekDay;    // день недели (1 пн.. 7 вс) ISO 8601
-uint16_t yearDay;   // день года (1.. 365-366)
+uint8_t weekDay();    // день недели (1 пн.. 7 вс) ISO 8601
+uint16_t yearDay();   // день года (1.. 365-366)
 ```
 
 > Указанные диапазоны справедливы для всех остальных функций библиотеки!
@@ -210,9 +210,6 @@ void nextDay();
 
 // следующий месяц (1 число 00:00:00)
 void nextMonth();
-
-// обновить weekDay и yearDay исходя из текущей даты (после ручного изменения)
-void updateDays();
 ```
 > Все добавления времени в Datime выполняются напрямую, без конвертации в unix, т.е. довольно быстро
 
@@ -244,6 +241,10 @@ operator Datime();
 char* dateToChar(char* buf);
 String dateToString();
 
+// вывести дату в формате "yyyy-mm-dd"
+char* dateToCharISO(char* buf);
+String dateToStringISO();
+
 // вывести время в формате "hh:mm:ss"
 char* timeToChar(char* buf);
 String timeToString();
@@ -251,6 +252,10 @@ String timeToString();
 // вывести время и дату в формате "dd.mm.yyyy hh:mm:ss"
 char* toChar(char* buf, char div = ' ');
 String toString(char div = ' ');
+
+// вывести в формате "yyyy-mm-dd hh:mm:ss"
+char* toCharISO(char* buf, char div = ' ');
+String toStringISO(char div = ' ');
 
 // ============ EXPORT EPOCH ============
 
@@ -293,7 +298,7 @@ uint16_t year();
 uint8_t weekDay();
 
 // получить текущий день года
-uint8_t yearDay();
+uint16_t yearDay();
 
 // сравнивается с Datime, uint32_t, DaySeconds
 ```
@@ -455,8 +460,8 @@ void loop() {
         dt.year;
         dt.second;
         dt.hour;
-        dt.weekDay;
-        dt.yearDay;
+        dt.weekDay();
+        dt.yearDay();
         // ... и прочие методы и переменные Datime
 
         // чтение напрямую, медленнее чем вывод в Datime

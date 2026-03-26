@@ -1,6 +1,9 @@
 #include <Arduino.h>
-#include <ESPDMX.h>
 
+#include <AutoOTA.h>
+AutoOTA ota("2.1", "https://raw.githubusercontent.com/Mark-RT/myUpdater/main/WiFiDMX3/project.json");
+
+#include <ESPDMX.h>
 DMXESPSerial dmx;
 
 // Connect GPIO02 - TDX1 to MAX3485. D4
@@ -10,19 +13,16 @@ DMXESPSerial dmx;
 #define ap_led 13   // D7
 
 #include <GyverDBFile.h>
-#include <LittleFS.h>
-// база данных для хранения настроек
-// будет автоматически записываться в файл при изменениях
-GyverDBFile db(&LittleFS, "/data.db");
+#include <LittleFS.h>                  // база данных для хранения настроек
+GyverDBFile db(&LittleFS, "/data.db"); // будет автоматически записываться в файл при изменениях
 
 #include <SettingsGyver.h>
-// указывается заголовок меню, подключается база данных
 SettingsGyver sett("My DMX", &db);
 
-// ключи для хранения в базе данных
-enum kk : size_t
+enum kk : size_t // ключи для хранения в базе данных
 {
     reset_btn,
+    init_btn,
     rainbow_sw,
 
     main_bright_sld,
@@ -35,9 +35,15 @@ enum kk : size_t
     rainbow_sld,
     strobe_sld,
 
+    dimmer3_sld,
+    warm_white_sld,
+    cold_white_sld,
+
     wifi_ssid,
     wifi_pass,
     apply,
+
+    was_update,
 };
 
 void setDMXColor(int startChannel, uint32_t color)
@@ -50,7 +56,7 @@ void setDMXColor(int startChannel, uint32_t color)
 
 void colorWheel(int startChannel, int color)
 {
-    byte r1, g1, b1;
+    uint8_t r1 = 0, g1 = 0, b1 = 0;
     if (color <= 255)
     { // красный макс, зелёный растёт
         r1 = 255;
@@ -96,13 +102,14 @@ void colorWheel(int startChannel, int color)
 
 void resetDMXChannels()
 {
-    for (int ch = 1; ch <= 16; ch++)
+    for (int ch = 1; ch <= 24; ch++)
     {
         dmx.write(ch, 0);
     }
     dmx.update();
 
     db.set(kk::reset_btn, 0);
+    db.set(kk::init_btn, 0);
     db.set(kk::rainbow_sw, 0);
 
     db.set(kk::main_bright_sld, 0);
@@ -114,191 +121,10 @@ void resetDMXChannels()
     db.set(kk::white_sld, 0);
     db.set(kk::rainbow_sld, 211);
     db.set(kk::strobe_sld, 0);
-}
 
-// билдер! Тут строится наше окно настроек
-void build(sets::Builder &b)
-{
-    // можно узнать, было ли действие по виджету
-    if (b.build.isAction())
-    {
-        /*Serial.print("Set: 0x");
-        Serial.print(b.build.id, HEX);
-        Serial.print(" = ");
-        Serial.println(b.build.value);*/
-
-        switch (b.build.id)
-        {
-        case 0xFFFFFFFE: // Reset button
-            // Serial.print("Reset button pressed");
-            resetDMXChannels();
-            break;
-
-        case 0x1: // Rainbow switch
-                  // Serial.print("Радуга: ");
-                  // Serial.println(b.build.pressed());
-            if (b.build.pressed())
-            {
-                dmx.write(7, db.get(kk::rainbow_sld));
-                dmx.write(15, db.get(kk::rainbow_sld));
-                //  Serial.println("Радуга відправляю значення ");
-                dmx.update();
-            }
-            else
-            {
-                // выключаем радугу
-                dmx.write(7, 0);
-                dmx.write(15, 0);
-                //  Serial.println("Радуга виключаю");
-                dmx.update();
-            }
-            break;
-
-        case 0x2: // Main brightness slider
-                  // Serial.print("Гол.яскрав: ");
-                  // Serial.println(b.build.value);
-            dmx.write(1, b.build.value);
-            dmx.write(9, b.build.value);
-            dmx.update();
-            break;
-
-        case 0x3: // Color mode changed
-                  //  Serial.print("Color mode changed: ");
-                  //  Serial.println(b.build.value);
-            b.reload();
-            if (b.build.value == 0)
-            {
-                // Palette mode selected, set colors from DB
-                uint32_t pal1 = db.get(kk::palitra1_clr);
-                setDMXColor(2, pal1);
-
-                uint32_t pal2 = db.get(kk::palitra2_clr);
-                setDMXColor(10, pal2);
-            }
-            else if (b.build.value == 1)
-            {
-                // Slider mode selected, set colors from DB
-                uint32_t sld1 = db.get(kk::palitra1_sld);
-                colorWheel(2, sld1);
-
-                uint32_t sld2 = db.get(kk::palitra2_sld);
-                colorWheel(10, sld2);
-            }
-            break;
-
-        case 0x4: // Palette 1 color
-                  //  Serial.print("Палітра 1: ");
-                  //  Serial.println(b.build.value);
-            setDMXColor(2, b.build.value);
-            break;
-
-        case 0x5:
-            //  Serial.print("Слайдер 1: ");
-            //   Serial.println(b.build.value);
-            colorWheel(2, b.build.value);
-            break;
-
-        case 0x6: // Palette 2 color
-                  //  Serial.print("Палітра 2: ");
-                  // Serial.println(b.build.value);
-            setDMXColor(10, b.build.value);
-            break;
-
-        case 0x7:
-            //   Serial.print("Слайдер 2: ");
-            //  Serial.println(b.build.value);
-            colorWheel(10, b.build.value);
-            break;
-
-        case 0x8: // White slider
-                  //  Serial.print("Білий: ");
-                  //   Serial.println(b.build.value);
-            dmx.write(5, b.build.value);
-            dmx.write(13, b.build.value);
-            dmx.update();
-            break;
-
-        case 0x9: // Rainbow slider
-                  // Serial.print("Радуга: ");
-                  // Serial.println(b.build.value);
-            if (db.get(kk::rainbow_sw))
-            {
-                dmx.write(7, b.build.value);
-                dmx.write(15, b.build.value);
-                //  Serial.println("Радуга рухаю значення");
-                dmx.update();
-            }
-            break;
-
-        case 0xA: // Strobe slider
-                  //  Serial.print("Стробоскоп: ");
-                  //  Serial.println(b.build.value);
-            dmx.write(6, b.build.value);
-            dmx.write(14, b.build.value);
-            dmx.update();
-            break;
-
-            /*case 0xB: // Назва WiFi мережі button
-                Serial.print("Введено назву: ");
-                Serial.println(b.build.value);
-                break;
-
-            case 0xC: // WiFi password button
-                Serial.print("Введено пароль: ");
-                Serial.println(b.build.value);
-                break;*/
-        }
-    }
-
-    if (b.beginRow("", sets::DivType::Block))
-    {
-        b.Button("Reset");
-        b.Switch(kk::rainbow_sw, "Радуга");
-        b.endRow();
-    }
-
-    if (b.beginGroup(""))
-    {
-        b.Slider(kk::main_bright_sld, "Головна яскравість", 0, 255, 5);
-        b.endGroup();
-    }
-
-    if (b.beginGroup(""))
-    {
-        // Color control mode selector
-        b.Select(kk::color_mode, "Вибір керування кольором:", "Палітра;Слайдер");
-
-        if (db.get(kk::color_mode) == 0)
-        {
-            b.Color(kk::palitra1_clr, "1 прожектор");
-            b.Color(kk::palitra2_clr, "2 прожектор");
-        }
-        else if (db.get(kk::color_mode) == 1)
-        {
-            b.Slider(kk::palitra1_sld, "1 прожектор", 0, 1530, 10);
-            b.Slider(kk::palitra2_sld, "2 прожектор", 0, 1530, 10);
-        }
-        b.endGroup();
-    }
-
-    if (b.beginGroup(""))
-    {
-        b.Slider(kk::white_sld, "Білий", 0, 255, 5);
-        b.Slider(kk::rainbow_sld, "Радуга", 211, 255, 1);
-        b.Slider(kk::strobe_sld, "Стробоскоп", 0, 255, 5);
-        b.endGroup();
-    }
-
-    {
-        sets::Group g(b, "WiFi");
-        b.Input(kk::wifi_ssid, "SSID");
-        b.Pass(kk::wifi_pass, "Password");
-        if (b.Button(kk::apply, "Save & Restart"))
-        {
-            db.update(); // сохраняем БД не дожидаясь таймаута
-            ESP.restart();
-        }
-    }
+    db.set(kk::dimmer3_sld, 0);
+    db.set(kk::warm_white_sld, 0);
+    db.set(kk::cold_white_sld, 0);
 }
 
 void initDMXFromDB()
@@ -351,15 +177,249 @@ void initDMXFromDB()
     dmx.write(6, db.get(kk::strobe_sld));
     dmx.write(14, db.get(kk::strobe_sld));
 
+    dmx.write(17, db.get(kk::dimmer3_sld));
+    dmx.write(18, db.get(kk::warm_white_sld));
+    dmx.write(19, db.get(kk::cold_white_sld));
+
     dmx.update();
 }
+
+void build(sets::Builder &b)
+{
+    // можно узнать, было ли действие по виджету
+    /*if (b.build.isAction())
+    {
+        Serial.print("Set: 0x");
+        Serial.print(b.build.id, HEX);
+        Serial.print(" = ");
+        Serial.println(b.build.value);
+    }*/
+
+    if (b.beginRow("", sets::DivType::Block))
+    {
+        b.Button(kk::reset_btn, "Reset");
+        b.Button(kk::init_btn, "Init");
+        b.Switch(kk::rainbow_sw, "Радуга");
+        b.endRow();
+    }
+
+    if (b.beginGroup("Кольорові прожектори"))
+    {
+        b.Slider(kk::main_bright_sld, "Головна яскравість", 0, 255, 5);
+
+        b.Select(kk::color_mode, "Вибір керування кольором:", "Палітра;Слайдер");
+        if (db.get(kk::color_mode) == 0)
+        {
+            b.Color(kk::palitra1_clr, "1 прожектор");
+            b.Color(kk::palitra2_clr, "2 прожектор");
+        }
+        else if (db.get(kk::color_mode) == 1)
+        {
+            b.Slider(kk::palitra1_sld, "1 прожектор", 0, 1530, 10);
+            b.Slider(kk::palitra2_sld, "2 прожектор", 0, 1530, 10);
+        }
+
+        b.Slider(kk::white_sld, "Білий", 0, 255, 5);
+        b.Slider(kk::rainbow_sld, "Радуга", 211, 255, 1);
+        b.Slider(kk::strobe_sld, "Стробоскоп", 0, 255, 5);
+        b.endGroup();
+    }
+
+    if (b.beginGroup("Білий прожектор"))
+    {
+        b.Slider(kk::dimmer3_sld, "Яскравість", 0, 255, 5);
+        b.Slider(kk::warm_white_sld, "Теплий", 0, 255, 5);
+        b.Slider(kk::cold_white_sld, "Холодний", 0, 255, 5);
+        b.endGroup();
+    }
+
+    {
+        sets::Group g(b, "WiFi");
+        b.Input(kk::wifi_ssid, "SSID");
+        b.Pass(kk::wifi_pass, "Password");
+        if (b.Button(kk::apply, "Save & Restart"))
+        {
+            db.update(); // сохраняем БД не дожидаясь таймаута
+            ESP.restart();
+        }
+    }
+
+    switch (b.build.id)
+    {
+    case kk::reset_btn: // Reset button
+        Serial.print("Reset button pressed");
+        resetDMXChannels();
+        break;
+
+    case kk::init_btn: // Init button
+        initDMXFromDB();
+        break;
+
+    case kk::rainbow_sw:
+        // Serial.print("Радуга: ");
+        // Serial.println(b.build.pressed());
+        if (b.build.pressed())
+        {
+            dmx.write(7, db.get(kk::rainbow_sld));
+            dmx.write(15, db.get(kk::rainbow_sld));
+            Serial.println("Радуга відправляю значення ");
+            dmx.update();
+        }
+        else
+        {
+            // выключаем радугу
+            dmx.write(7, 0);
+            dmx.write(15, 0);
+            Serial.println("Радуга виключаю");
+            dmx.update();
+        }
+        break;
+
+    case kk::main_bright_sld:
+        // Serial.print("Гол.яскрав: ");
+        // Serial.println(b.build.value);
+        dmx.write(1, b.build.value);
+        dmx.write(9, b.build.value);
+        dmx.update();
+        break;
+
+    case kk::color_mode:
+        //  Serial.print("Color mode changed: ");
+        //  Serial.println(b.build.value);
+        b.reload();
+        if (b.build.value == 0)
+        {
+            // Palette mode selected, set colors from DB
+            uint32_t pal1 = db.get(kk::palitra1_clr);
+            setDMXColor(2, pal1);
+
+            uint32_t pal2 = db.get(kk::palitra2_clr);
+            setDMXColor(10, pal2);
+        }
+        else if (b.build.value == 1)
+        {
+            // Slider mode selected, set colors from DB
+            uint32_t sld1 = db.get(kk::palitra1_sld);
+            colorWheel(2, sld1);
+
+            uint32_t sld2 = db.get(kk::palitra2_sld);
+            colorWheel(10, sld2);
+        }
+        break;
+
+    case kk::palitra1_clr:
+        //  Serial.print("Палітра 1: ");
+        //  Serial.println(b.build.value);
+        setDMXColor(2, b.build.value);
+        break;
+
+    case kk::palitra1_sld:
+        // Serial.print("Слайдер 1: ");
+        //  Serial.println(b.build.value);
+        colorWheel(2, b.build.value);
+        break;
+
+    case kk::palitra2_clr:
+        // Serial.print("Палітра 2: ");
+        // Serial.println(b.build.value);
+        setDMXColor(10, b.build.value);
+        break;
+
+    case kk::palitra2_sld:
+        // Serial.print("Слайдер 2: ");
+        // Serial.println(b.build.value);
+        colorWheel(10, b.build.value);
+        break;
+
+    case kk::white_sld:
+        // Serial.print("Білий: ");
+        // Serial.println(b.build.value);
+        dmx.write(5, b.build.value);
+        dmx.write(13, b.build.value);
+        dmx.update();
+        break;
+
+    case kk::rainbow_sld:
+        // Serial.print("Радуга: ");
+        // Serial.println(b.build.value);
+        if (db.get(kk::rainbow_sw))
+        {
+            dmx.write(7, b.build.value);
+            dmx.write(15, b.build.value);
+            //  Serial.println("Радуга рухаю значення");
+            dmx.update();
+        }
+        break;
+
+    case kk::strobe_sld:
+        //  Serial.print("Стробоскоп: ");
+        //  Serial.println(b.build.value);
+        dmx.write(6, b.build.value);
+        dmx.write(14, b.build.value);
+        dmx.update();
+        break;
+
+    case kk::dimmer3_sld:
+        dmx.write(17, b.build.value);
+        dmx.update();
+        break;
+
+    case kk::warm_white_sld:
+        dmx.write(18, b.build.value);
+        dmx.update();
+        break;
+
+    case kk::cold_white_sld:
+        dmx.write(19, b.build.value);
+        dmx.update();
+        break;
+
+        /*case 0xB: // Назва WiFi мережі button
+        Serial.print("Введено назву: ");
+        Serial.println(b.build.value);
+        break;
+
+        case 0xC: // WiFi password button
+        Serial.print("Введено пароль: ");
+        Serial.println(b.build.value);
+        break;*/
+    }
+}
+
+void checkUpdate()
+{
+    String ver, notes;
+    if (ota.checkUpdate(&ver, &notes))
+    {
+        Serial.println("Знайдено оновлення!");
+        Serial.println(ver);
+        Serial.println(notes);
+        ota.updateNow(); // Запускаем процесс
+    }
+}
+
+/*void doItOnce()
+{
+    bool checkSuccessUpdate = true; // Флаг, чтобы проверить один раз при старте
+
+    if (checkSuccessUpdate && WiFiConnector.connected())
+    {
+        checkSuccessUpdate = false;
+
+        if (db.get(kk::was_update)) // Если в базе висит флаг, что мы пытались обновляться
+        {
+            db.set(kk::was_update, false);
+            db.update();
+        }
+    }
+}*/
 
 void setup()
 {
     Serial.begin(115200);
     Serial.println();
 
-    dmx.init(16);
+    dmx.init(24);
 
     pinMode(wifi_led, OUTPUT);
     pinMode(ap_led, OUTPUT);
@@ -378,7 +438,7 @@ void setup()
     // sett.config.requestTout = 3000;
     // sett.config.sliderTout = 500;
     // sett.config.updateTout = 1000;
-    sett.config.theme = sets::Colors::Black;
+    sett.config.theme = sets::Colors::Mint;
 
     // ======== DATABASE ========
 #ifdef ESP32
@@ -391,6 +451,7 @@ void setup()
 
     // инициализация базы данных начальными значениями
     db.init(kk::reset_btn, 0);
+    db.init(kk::init_btn, 0);
     db.init(kk::rainbow_sw, 0);
 
     db.init(kk::main_bright_sld, 60);
@@ -403,8 +464,14 @@ void setup()
     db.init(kk::rainbow_sld, 211);
     db.init(kk::strobe_sld, 0);
 
+    db.init(kk::dimmer3_sld, 60);
+    db.init(kk::warm_white_sld, 0);
+    db.init(kk::cold_white_sld, 0);
+
     db.init(kk::wifi_ssid, "");
     db.init(kk::wifi_pass, "");
+
+    db.init(kk::was_update, false);
 
     // db.dump(Serial);
 
@@ -436,7 +503,7 @@ void setup()
     if (WiFi.status() != WL_CONNECTED)
     {
         // AP
-        WiFi.softAP("DMX WiFi controller", "qwerty123");
+        WiFi.softAP("DMX WiFi controller", "12345678");
         Serial.print("AP: ");
         Serial.println(WiFi.softAPIP());
         digitalWrite(ap_led, HIGH);
@@ -448,6 +515,12 @@ void setup()
 
 void loop()
 {
-    // тикер, вызывать в лупе
+    ota.tick();
+    static unsigned long ota_timer = 0;
+    if (millis() - ota_timer > 150000)
+    {
+        ota_timer = millis();
+        checkUpdate();
+    }
     sett.tick();
 }

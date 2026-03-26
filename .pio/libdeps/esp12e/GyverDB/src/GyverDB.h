@@ -1,8 +1,8 @@
 #pragma once
 #include <Arduino.h>
+#include <GTL.h>
 #include <StreamIO.h>
 #include <StringUtils.h>
-#include <GTL.h>
 
 #include "utils/access.h"
 #include "utils/anytype.h"
@@ -16,6 +16,7 @@
 
 class GyverDB : private gtl::stack<gdb::block_t> {
     typedef gtl::stack<gdb::block_t> ST;
+    typedef void (*ChangeCallback)(size_t hash);
 
     enum class Putmode {
         Set,
@@ -34,29 +35,35 @@ class GyverDB : private gtl::stack<gdb::block_t> {
     GyverDB(uint16_t reserveEntries = 0) {
         reserve(reserveEntries);
     }
-    GyverDB(const GyverDB& db) = delete;
-    GyverDB(GyverDB& db) {
-        move(db);
-    }
-    GyverDB(GyverDB&& db) noexcept {
-        move(db);
-    }
-    GyverDB& operator=(GyverDB db) {
-        move(db);
-        return *this;
-    }
-    
-    void move(GyverDB& db) noexcept {
-        ST::move(db);
-#ifndef DB_NO_UPDATES
-        _updates.move(db._updates);
-#endif
-        gtl::swap(_keepTypes, db._keepTypes);
-        gtl::swap(_useUpdates, db._useUpdates);
-        gtl::swap(_cache, db._cache);
-        gtl::swap(_cache_h, db._cache_h);
-        _change();
-    }
+
+    // GyverDB(const GyverDB& db) = delete;
+    // GyverDB(GyverDB&& db) = delete;
+
+    // GyverDB& operator=(const GyverDB& db) = delete;
+    // GyverDB& operator=(GyverDB&& db) = delete;
+
+    //     GyverDB(GyverDB& db) : ST() {
+    //         move(db);
+    //     }
+    //     GyverDB(GyverDB&& db) noexcept {
+    //         move(db);
+    //     }
+    //     GyverDB& operator=(GyverDB db) {
+    //         move(db);
+    //         return *this;
+    //     }
+
+    //     void move(GyverDB& db) noexcept {
+    //         ST::move(db);
+    // #ifndef DB_NO_UPDATES
+    //         _updates.move(db._updates);
+    // #endif
+    //         gtl::swap(_keepTypes, db._keepTypes);
+    //         gtl::swap(_useUpdates, db._useUpdates);
+    //         gtl::swap(_cache, db._cache);
+    //         gtl::swap(_cache_h, db._cache_h);
+    //         _change();
+    //     }
 
     ~GyverDB() {
         clear();
@@ -298,6 +305,11 @@ class GyverDB : private gtl::stack<gdb::block_t> {
     bool update(const Text& key, gdb::AnyType val) { return _put(key.hash(), val, Putmode::Update); }
 
     // ===================== MISC =====================
+    // подключить обработчик создания и изменения значения записи вида void f(size_t hash)
+    void onChange(ChangeCallback cb) {
+        _change_cb = cb;
+    }
+
     // есть непрочитанные изменения
     bool updatesAvailable() {
 #ifndef DB_NO_UPDATES
@@ -332,11 +344,12 @@ class GyverDB : private gtl::stack<gdb::block_t> {
     bool _update = 0;
 
    private:
+    ChangeCallback _change_cb = nullptr;
+    int16_t _cache = -1;
+    size_t _cache_h = 0;
     bool _keepTypes = true;
     bool _useUpdates = false;
     bool _changed = false;
-    int16_t _cache = -1;
-    size_t _cache_h = 0;
 
 #ifndef DB_NO_UPDATES
     gtl::stack<size_t> _updates;
@@ -344,6 +357,7 @@ class GyverDB : private gtl::stack<gdb::block_t> {
 
     void _setChanged(size_t hash) {
         _change();
+        if (_change_cb) _change_cb(hash);
 #ifndef DB_NO_UPDATES
         if (_useUpdates && _updates.indexOf(hash) < 0) _updates.push(hash);
 #endif
@@ -403,6 +417,12 @@ class GyverDB : private gtl::stack<gdb::block_t> {
             }
         }
         _change();
+
+        if (_change_cb) {
+            for (size_t i = 0; i < length(); i++) {
+                _change_cb(_buf[i].keyHash());
+            }
+        }
         return 1;
     }
 

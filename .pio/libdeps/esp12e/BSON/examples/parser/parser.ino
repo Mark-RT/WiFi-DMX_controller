@@ -11,7 +11,8 @@ uint8_t bson_st[] = {
 
     BSON_KEY("arr", 3),
     BSON_CONT('['),
-    BSON_STR("string", 6),
+    // BSON_STR("string", 6),
+    BSON_CHARS('s', 't', 'r', 'i', 'n', 'g'),
     BSON_CODE(12),
     BSON_INT8(123),
     BSON_INT8(-123),
@@ -29,6 +30,10 @@ uint8_t bson_st[] = {
 void setup() {
     Serial.begin(115200);
     Serial.println("start");
+
+    // BSON b;
+    // b.concat(bson_st, sizeof(bson_st));
+    // b.stringify(Serial);
 
     BSON::Parser p(bson_st, sizeof(bson_st));
 
@@ -64,20 +69,9 @@ void setup() {
                 Serial.println("Binary");
                 break;
 
-            case BSType::ObjectOpen:
-                Serial.println("ObjectOpen");
-                break;
-
-            case BSType::ObjectClose:
-                Serial.println("ObjectClose");
-                break;
-
-            case BSType::ArrayOpen:
-                Serial.println("ArrayOpen");
-                break;
-
-            case BSType::ArrayClose:
-                Serial.println("ArrayClose");
+            case BSType::Container:
+                Serial.print(p.isObject() ? "Object" : "Array");
+                Serial.println(p.isOpen() ? "Open" : "Close");
                 break;
         }
     }

@@ -5,14 +5,21 @@ namespace gtl {
 
 template <typename T>
 struct bsearch_t {
-    // индекс в стеке
-    int idx;
+    // индекс в стеке. Если ptr == nullptr - позиция для вставки
+    size_t idx;
 
-    // указатель на данные, если найдены
+    // указатель на данные в стеке, не найдены - nullptr
     T* ptr;
 
     // данные найдены
-    explicit operator bool() {
+    explicit operator bool() const {
+        return ptr != nullptr;
+    }
+
+    operator T*() {
+        return ptr;
+    }
+    operator const T*() const {
         return ptr;
     }
 };
@@ -20,7 +27,44 @@ struct bsearch_t {
 // Base Stack
 template <typename T, typename AR>
 class stackT : protected AR {
+    class Iter {
+        T* p;
+
+       public:
+        Iter(T* ptr) : p(ptr) {}
+
+        T& operator*() const {
+            return *p;
+        }
+
+        operator T*() const {
+            return p;
+        }
+
+        Iter& operator++() {
+            ++p;
+            return *this;
+        }
+
+        bool operator!=(const Iter& other) const {
+            return p != other.p;
+        }
+    };
+
    public:
+    Iter begin() {
+        return Iter(_buf);
+    }
+
+    Iter end() {
+        return Iter(_buf + _len);
+    }
+
+    // указатель на элемент, следующий за последним
+    // inline T* end() const {
+    //     return _buf + _len;
+    // }
+
     // экспортировать в файл
     template <typename FS>
     bool writeToFile(FS& fs, const char* path) {
@@ -49,7 +93,7 @@ class stackT : protected AR {
             size_t rlen = stream.available() / sizeof(T);
             if (!rlen ||
                 !_fit(_len + rlen) ||
-                stream.readBytes((char*)(_buf + _len), rlen * sizeof(T)) != rlen * sizeof(T)) {
+                stream.readBytes((char*)end(), rlen * sizeof(T)) != rlen * sizeof(T)) {
                 clear();
                 return false;
             }
@@ -66,18 +110,20 @@ class stackT : protected AR {
         return true;
     }
 
+    // добавить в конец
+    template <typename... Rest>
+    bool push(const T& first, const Rest&... rest) {
+        if (!push(first)) return false;
+        return push(rest...);
+    }
+    bool push() {
+        return true;
+    }
+
     // добавить, если нет элемента с таким значением
     bool pushUniq(const T& val) {
         return has(val) ? false : push(val);
     }
-
-#if __cplusplus >= 201703L || defined(STACK_USE_FOLD) || defined(ESP32)
-    // добавить в конец
-    template <typename... Args>
-    void pushList(const Args&... args) {
-        (void)(push(args), ...);
-    }
-#endif
 
     // добавить в конец
     inline bool operator+=(const T& val) {
@@ -86,16 +132,16 @@ class stackT : protected AR {
 
     // получить с конца и удалить
     T& pop() {
-        return _buf[length() ? --_len : 0];
+        return _buf[_len ? --_len : 0];
     }
 
     // прочитать с конца не удаляя
-    T& last() const {
-        return _buf[length() ? _len - 1 : 0];
+    T& last() {
+        return _buf[_len ? _len - 1 : 0];
     }
 
     // прочитать с начала не удаляя
-    inline T& first() const {
+    inline T& first() {
         return _buf[0];
     }
 
@@ -111,7 +157,7 @@ class stackT : protected AR {
 
     // получить с начала и удалить
     T unshift() {
-        if (!length()) return T();
+        if (!_len) return T();
 
         T t = _buf[0];
         --_len;
@@ -121,16 +167,15 @@ class stackT : protected AR {
 
     // бинарный поиск в отсортированном стеке
     bsearch_t<T> searchSort(const T& val) {
-        if (!length()) return bsearch_t<T>{0, nullptr};
+        size_t low = 0, high = _len;
 
-        int mid, low = 0, high = length() - 1;
-        while (low <= high) {
-            mid = low + ((high - low) >> 1);
-            if (_buf[mid] == val) return bsearch_t<T>{mid, &_buf[mid]};
+        while (low < high) {
+            size_t mid = low + ((high - low) >> 1);
             if (_buf[mid] < val) low = mid + 1;
-            else high = mid - 1;
+            else high = mid;
         }
-        return bsearch_t<T>{low, nullptr};
+
+        return {low, (low < _len && _buf[low] == val) ? &_buf[low] : nullptr};
     }
 
     // добавить с сортировкой. Флаг uniq - не добавлять если элемент уже есть
@@ -146,9 +191,28 @@ class stackT : protected AR {
         return insert(pos.idx, val);
     }
 
+    // сортировать стек
+    void sort() {
+        for (size_t i = 1; i < _len; ++i) {
+            T key = _buf[i];
+            int j = i - 1;
+
+            while (j >= 0 && _buf[j] > key) {
+                _buf[j + 1] = _buf[j];
+                --j;
+            }
+
+            _buf[j + 1] = key;
+        }
+    }
+
+    bool remove(const bsearch_t<T>& pos) {
+        return pos ? remove(pos.idx) : false;
+    }
+
     // удалить элемент. Отрицательный - с конца
     bool remove(int idx) {
-        if (!length() || idx >= (int)_len || idx < -(int)_len) return false;
+        if (!_len || idx >= (int)_len || idx < -(int)_len) return false;
 
         if (idx < 0) idx += _len;
         memcpy((void*)(_buf + idx), (const void*)(_buf + idx + 1), (_len - idx - 1) * sizeof(T));
@@ -157,11 +221,11 @@ class stackT : protected AR {
     }
 
     // удалить несколько элементов, начиная с индекса
-    bool remove(uint16_t from, uint16_t amount) {
-        if (!length() || !amount || from >= _len) return false;
+    bool remove(size_t from, size_t amount) {
+        if (!_len || !amount || from >= _len) return false;
 
-        uint16_t to = from + amount;
-        if (to >= _len - 1) {
+        size_t to = from + amount;
+        if (to >= _len) {
             _len = from;
             return true;
         }
@@ -176,7 +240,7 @@ class stackT : protected AR {
         if (idx < 0) return false;
 
         if (idx == 0) return shift(val);
-        else if (idx >= (int)_len) return push(val);
+        else if (size_t(idx) >= _len) return push(val);
 
         if (!_fit(_len + 1)) return false;
 
@@ -198,11 +262,13 @@ class stackT : protected AR {
 
     // прибавить другой массив того же типа в конец
     bool concat(const T* buf, size_t len, bool pgm = false) {
-        if (!len) return true;
         if (!buf || !_fit(_len + len)) return false;
 
-        if (pgm) memcpy_P((void*)(_buf + _len), (const void*)(buf), len * sizeof(T));
-        else memcpy((void*)(_buf + _len), (const void*)(buf), len * sizeof(T));
+#ifdef ARDUINO
+        if (pgm) memcpy_P((void*)end(), (const void*)(buf), len * sizeof(T));
+        else
+#endif
+            memcpy((void*)end(), (const void*)(buf), len * sizeof(T));
 
         _len += len;
         return true;
@@ -213,8 +279,11 @@ class stackT : protected AR {
         size_t wlen = (len + sizeof(T) - 1) / sizeof(T);
         if (!len || !buf || !_fit(_len + wlen)) return 0;
 
-        if (pgm) memcpy_P((void*)(_buf + _len), buf, len);
-        else memcpy((void*)(_buf + _len), buf, len);
+#ifdef ARDUINO
+        if (pgm) memcpy_P((void*)end(), buf, len);
+        else
+#endif
+            memcpy((void*)end(), buf, len);
 
         _len += wlen;
         return len;
@@ -237,30 +306,40 @@ class stackT : protected AR {
     }
 
     // количество элементов
-    inline uint16_t length() const {
-        return _buf ? _len : 0;
+    inline size_t length() const {
+        return _len;
     }
 
     // текущий размер в байтах
     size_t size() const {
-        return length() * sizeof(T);
+        return _len * sizeof(T);
+    }
+
+    // осталось свободного места, элементов
+    size_t left() const {
+        return AR::size() - _len;
     }
 
     // установить количество элементов (само вызовет reserve)
-    bool setLength(uint16_t len) {
-        if (!_fit(_len + len)) return false;
+    bool setLength(size_t len) {
+        if (!_fit(len)) return false;
 
         _len = len;
         return true;
     }
 
+    // добавить количество элементов (само вызовет reserve)
+    bool addLength(size_t len) {
+        return setLength(_len + len);
+    }
+
     // есть место для добавления
     bool canAdd() const {
-        return _buf ? (_len < _size) : 0;
+        return _len < _size;
     }
 
     // вместимость, элементов
-    inline uint16_t capacity() const {
+    inline size_t capacity() const {
         return AR::size();
     }
 
@@ -271,7 +350,7 @@ class stackT : protected AR {
 
     // позиция элемента (-1 если не найден)
     int indexOf(const T& val) const {
-        for (size_t i = 0; i < length(); i++) {
+        for (size_t i = 0; i < _len; i++) {
             if (_buf[i] == val) return i;
         }
         return -1;
@@ -289,20 +368,31 @@ class stackT : protected AR {
     }
 
     // получить элемент под индексом. Отрицательный - с конца
-    T& get(int idx) const {
-        if (idx < 0) idx += _len;
-        if (idx < 0 || !_len) return _buf[0];
-        return ((size_t)idx < _len) ? _buf[idx] : _buf[_len - 1];
+    T& get(int i) {
+        return const_cast<T&>(static_cast<const stackT&>(*this).get(i));
+    }
+    const T& get(int i) const {
+        return (i >= int(_len) || i < -int(_len)) ? _buf[0] : (*this)[i];
     }
 
-    // получить элемент под индексом без проверок
-    inline T& _get(int idx) const {
-        return _buf[idx];
+    // получить элемент под индексом без проверок. Отрицательный - с конца
+    T& operator[](int i) {
+        return const_cast<T&>(static_cast<const stackT&>(*this)[i]);
+    }
+    const T& operator[](int i) const {
+        return at(i);
     }
 
-    // получить элемент под индексом. Отрицательный - с конца
-    inline T& operator[](int idx) const {
-        return get(idx);
+    T& at(int i) {
+        return const_cast<T&>(at(i));
+    }
+    const T& at(int i) const {
+        return _buf[i < 0 ? i + int(_len) : i];
+    }
+
+    // итерировать все элементы
+    void loop(void (*cb)(T& el)) const {
+        for (size_t i = 0; i < _len; i++) cb(_buf[i]);
     }
 
     // буфер существует
@@ -322,22 +412,28 @@ class stackT : protected AR {
     bool includes(const T& val) const __attribute__((deprecated)) {
         return has(val);
     }
-    T& peek() const {
+    T& peek() __attribute__((deprecated)) {
         return last();
     }
-    T& unpeek() const {
+    T& unpeek() __attribute__((deprecated)) {
         return first();
+    }
+    T& _get(int idx) {
+        return _buf[idx];
+    }
+    const T& _get(int idx) const {
+        return _buf[idx];
     }
 
    protected:
     using AR::_buf;
     using AR::_size;
-    uint16_t _len = 0;
-    uint16_t _oversize = 8;
+    size_t _len = 0;
+    uint8_t _oversize = 8;
 
     // зарезервировать, элементов (установить новый размер буфера)
-    inline bool reserve(uint16_t size) {
-        return _size < size ? AR::resize(size) : true;
+    inline bool reserve(size_t len) {
+        return AR::resize(len > _size ? len : _size);
     }
 
     // освободить незанятое зарезервированное место
@@ -346,18 +442,18 @@ class stackT : protected AR {
     }
 
     // зарезервировать, элементов (добавить к текущему размеру буфера)
-    inline bool addCapacity(uint16_t size) {
-        return _fit(_size + size);
+    inline bool addCapacity(size_t len) {
+        return _fit(_size + len);
     }
 
     // установить увеличение размера для уменьшения количества мелких реаллокаций. Умолч. 8
-    inline void setOversize(uint16_t oversize) {
+    inline void setOversize(uint8_t oversize) {
         _oversize = oversize;
     }
 
    private:
-    bool _fit(uint16_t size) {
-        return (size <= _size || reserve(size + _oversize)) && _buf;
+    bool _fit(size_t len) {
+        return len <= _size || AR::resize(len + _oversize);
     }
 };
 
@@ -376,6 +472,11 @@ class stack : public stackT<T, array<T>> {
     void reset() {
         ST::reset();
         ST::_len = 0;
+    }
+
+    // есть место для добавления
+    bool canAdd() const {
+        return true;
     }
 
     stack() {}

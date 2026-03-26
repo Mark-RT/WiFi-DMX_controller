@@ -488,7 +488,7 @@ class SettingsBase {
 
     void _sendFs(bool granted) {
         String res;
-        if (granted) fs.listDir(res, "/", true);
+        if (granted) fs.listDir(res, "/", ';', ':');
 
         Packet p;
         p('{');
@@ -517,7 +517,6 @@ class SettingsBase {
             p[Code::uptime] = millis() / 1000;
             p[Code::mac] = getMac();
             p[Code::local_ip] = getIP().toString();
-            p[Code::s_ver] = SETTINGS_VER;
             if (_f_ver) p[Code::f_ver] = _f_ver;
             if (custom.p) p[Code::custom_hash] = custom.hash;
             if (_title.length()) p[Code::title] = _title;
