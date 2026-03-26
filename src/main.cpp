@@ -1,7 +1,10 @@
 #include <Arduino.h>
 
+#include <WiFiConnector.h>
+bool config_error = false;
+
 #include <AutoOTA.h>
-AutoOTA ota("2.1", "https://raw.githubusercontent.com/Mark-RT/myUpdater/main/WiFiDMX3/project.json");
+AutoOTA ota("2.2", "https://raw.githubusercontent.com/Mark-RT/myUpdater/main/WiFiDMX3/project.json");
 
 #include <ESPDMX.h>
 DMXESPSerial dmx;
@@ -21,7 +24,6 @@ SettingsGyver sett("My DMX", &db);
 
 enum kk : size_t // ключи для хранения в базе данных
 {
-    reset_btn,
     init_btn,
     rainbow_sw,
 
@@ -42,8 +44,6 @@ enum kk : size_t // ключи для хранения в базе данных
     wifi_ssid,
     wifi_pass,
     apply,
-
-    was_update,
 };
 
 void setDMXColor(int startChannel, uint32_t color)
@@ -108,8 +108,6 @@ void resetDMXChannels()
     }
     dmx.update();
 
-    db.set(kk::reset_btn, 0);
-    db.set(kk::init_btn, 0);
     db.set(kk::rainbow_sw, 0);
 
     db.set(kk::main_bright_sld, 0);
@@ -195,11 +193,19 @@ void build(sets::Builder &b)
         Serial.println(b.build.value);
     }*/
 
-    if (b.beginRow("", sets::DivType::Block))
+    if (b.beginRow())
     {
-        b.Button(kk::reset_btn, "Reset");
-        b.Button(kk::init_btn, "Init");
-        b.Switch(kk::rainbow_sw, "Радуга");
+        if (b.Button("Reset"))
+        {
+            // Serial.print("Reset button pressed");
+            resetDMXChannels();
+        }
+        if (b.Button(kk::init_btn, "Init"))
+        {
+            // Serial.print("Init button pressed");
+            initDMXFromDB();
+        }
+        b.Label("Версія:", ota.version());
         b.endRow();
     }
 
@@ -220,6 +226,7 @@ void build(sets::Builder &b)
         }
 
         b.Slider(kk::white_sld, "Білий", 0, 255, 5);
+        b.Switch(kk::rainbow_sw, "Радуга");
         b.Slider(kk::rainbow_sld, "Радуга", 211, 255, 1);
         b.Slider(kk::strobe_sld, "Стробоскоп", 0, 255, 5);
         b.endGroup();
@@ -246,15 +253,6 @@ void build(sets::Builder &b)
 
     switch (b.build.id)
     {
-    case kk::reset_btn: // Reset button
-        Serial.print("Reset button pressed");
-        resetDMXChannels();
-        break;
-
-    case kk::init_btn: // Init button
-        initDMXFromDB();
-        break;
-
     case kk::rainbow_sw:
         // Serial.print("Радуга: ");
         // Serial.println(b.build.pressed());
@@ -262,7 +260,7 @@ void build(sets::Builder &b)
         {
             dmx.write(7, db.get(kk::rainbow_sld));
             dmx.write(15, db.get(kk::rainbow_sld));
-            Serial.println("Радуга відправляю значення ");
+            // Serial.println("Радуга відправляю значення ");
             dmx.update();
         }
         else
@@ -270,7 +268,7 @@ void build(sets::Builder &b)
             // выключаем радугу
             dmx.write(7, 0);
             dmx.write(15, 0);
-            Serial.println("Радуга виключаю");
+            // Serial.println("Радуга виключаю");
             dmx.update();
         }
         break;
@@ -284,8 +282,8 @@ void build(sets::Builder &b)
         break;
 
     case kk::color_mode:
-        //  Serial.print("Color mode changed: ");
-        //  Serial.println(b.build.value);
+        // Serial.print("Color mode changed: ");
+        // Serial.println(b.build.value);
         b.reload();
         if (b.build.value == 0)
         {
@@ -308,14 +306,14 @@ void build(sets::Builder &b)
         break;
 
     case kk::palitra1_clr:
-        //  Serial.print("Палітра 1: ");
-        //  Serial.println(b.build.value);
+        // Serial.print("Палітра 1: ");
+        // Serial.println(b.build.value);
         setDMXColor(2, b.build.value);
         break;
 
     case kk::palitra1_sld:
         // Serial.print("Слайдер 1: ");
-        //  Serial.println(b.build.value);
+        // Serial.println(b.build.value);
         colorWheel(2, b.build.value);
         break;
 
@@ -352,24 +350,27 @@ void build(sets::Builder &b)
         break;
 
     case kk::strobe_sld:
-        //  Serial.print("Стробоскоп: ");
-        //  Serial.println(b.build.value);
+        // Serial.print("Стробоскоп: ");
+        // Serial.println(b.build.value);
         dmx.write(6, b.build.value);
         dmx.write(14, b.build.value);
         dmx.update();
         break;
 
     case kk::dimmer3_sld:
+        // Serial.println("dimmer3");
         dmx.write(17, b.build.value);
         dmx.update();
         break;
 
     case kk::warm_white_sld:
+        // Serial.println("warm_white");
         dmx.write(18, b.build.value);
         dmx.update();
         break;
 
     case kk::cold_white_sld:
+        // Serial.println("cold_white");
         dmx.write(19, b.build.value);
         dmx.update();
         break;
@@ -391,28 +392,21 @@ void checkUpdate()
     String ver, notes;
     if (ota.checkUpdate(&ver, &notes))
     {
-        Serial.println("Знайдено оновлення!");
+        /*Serial.println("Знайдено оновлення!");
         Serial.println(ver);
-        Serial.println(notes);
+        Serial.println(notes);*/
         ota.updateNow(); // Запускаем процесс
     }
 }
 
-/*void doItOnce()
+void blink_tick()
 {
-    bool checkSuccessUpdate = true; // Флаг, чтобы проверить один раз при старте
-
-    if (checkSuccessUpdate && WiFiConnector.connected())
+    if (WiFiConnector.connecting())
     {
-        checkSuccessUpdate = false;
-
-        if (db.get(kk::was_update)) // Если в базе висит флаг, что мы пытались обновляться
-        {
-            db.set(kk::was_update, false);
-            db.update();
-        }
+        digitalWrite(wifi_led, false);
+        digitalWrite(ap_led, (millis() / 500) % 2);
     }
-}*/
+}
 
 void setup()
 {
@@ -425,21 +419,6 @@ void setup()
     pinMode(ap_led, OUTPUT);
     digitalWrite(ap_led, LOW);
 
-    // ======== WIFI ========
-    // STA
-    WiFi.mode(WIFI_AP_STA);
-
-    // ======== SETTINGS ========
-    sett.begin();
-    sett.onBuild(build);
-    // sett.onUpdate(update);
-
-    // настройки вебморды
-    // sett.config.requestTout = 3000;
-    // sett.config.sliderTout = 500;
-    // sett.config.updateTout = 1000;
-    sett.config.theme = sets::Colors::Mint;
-
     // ======== DATABASE ========
 #ifdef ESP32
     LittleFS.begin(true);
@@ -450,7 +429,6 @@ void setup()
     db.begin();
 
     // инициализация базы данных начальными значениями
-    db.init(kk::reset_btn, 0);
     db.init(kk::init_btn, 0);
     db.init(kk::rainbow_sw, 0);
 
@@ -471,51 +449,42 @@ void setup()
     db.init(kk::wifi_ssid, "");
     db.init(kk::wifi_pass, "");
 
-    db.init(kk::was_update, false);
-
-    // db.dump(Serial);
-
-    // часовой пояс для rtc
     setStampZone(2);
 
-    // ======= STA =======
-    // если логин задан - подключаемся
-    if (db[kk::wifi_ssid].length())
-    {
-        WiFi.begin(db[kk::wifi_ssid], db[kk::wifi_pass]);
-        Serial.print("Connect STA");
-        int tries = 20;
-        while (WiFi.status() != WL_CONNECTED)
-        {
-            delay(100);
-            digitalWrite(wifi_led, LOW);
-            delay(400);
-            digitalWrite(wifi_led, HIGH);
-            Serial.print('.');
-            if (!--tries)
-                break;
-        }
-        Serial.println();
-        Serial.print("IP: ");
-        Serial.println(WiFi.localIP());
-    }
+    // ======== WIFI ========
+    WiFiConnector.onConnect([]()
+                            {
+        Serial.print("Connected. Local IP: ");
+        Serial.println(WiFi.localIP()); 
+    digitalWrite(wifi_led, 1);
+    digitalWrite(ap_led, 0); });
 
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        // AP
-        WiFi.softAP("DMX WiFi controller", "12345678");
-        Serial.print("AP: ");
-        Serial.println(WiFi.softAPIP());
-        digitalWrite(ap_led, HIGH);
-        digitalWrite(wifi_led, LOW);
-    }
+    WiFiConnector.onError([]()
+                          {
+        Serial.print("WiFi error. AP IP: ");
+        Serial.println(WiFi.softAPIP()); 
+    digitalWrite(wifi_led, 0);
+    digitalWrite(ap_led, 1); });
+
+    WiFiConnector.setName("WiFi-DMX_Controller");
+    WiFiConnector.setPass("12345678");
+    WiFiConnector.setTimeout(40);
+    WiFiConnector.connect((db[kk::wifi_ssid]), (db[kk::wifi_pass]));
+
+    // ======== SETTINGS ========
+    sett.begin();
+    sett.onBuild(build);
+    sett.config.theme = sets::Colors::Mint;
 
     initDMXFromDB();
 }
 
 void loop()
 {
+    WiFiConnector.tick();
     ota.tick();
+    blink_tick();
+
     static unsigned long ota_timer = 0;
     if (millis() - ota_timer > 150000)
     {
