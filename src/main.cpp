@@ -20,7 +20,7 @@ DMXESPSerial dmx;
 GyverDBFile db(&LittleFS, "/data.db"); // будет автоматически записываться в файл при изменениях
 
 #include <SettingsGyver.h>
-SettingsGyver sett("My DMX", &db);
+SettingsGyver sett("DMX пульт", &db);
 
 enum kk : size_t // ключи для хранения в базе данных
 {
@@ -226,7 +226,7 @@ void build(sets::Builder &b)
         }
 
         b.Slider(kk::white_sld, "Білий", 0, 255, 5);
-        b.Switch(kk::rainbow_sw, "Радуга");
+        b.Switch(kk::rainbow_sw, "Радуга on/off");
         b.Slider(kk::rainbow_sld, "Радуга", 211, 255, 1);
         b.Slider(kk::strobe_sld, "Стробоскоп", 0, 255, 5);
         b.endGroup();
@@ -494,5 +494,6 @@ void loop()
 
     if ((millis() / 100) % 2)
         dmx.update();
+
     sett.tick();
 }
