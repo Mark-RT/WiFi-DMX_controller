@@ -4,7 +4,7 @@
 bool config_error = false;
 
 #include <AutoOTA.h>
-AutoOTA ota("2.2", "https://raw.githubusercontent.com/Mark-RT/myUpdater/main/WiFiDMX3/project.json");
+AutoOTA ota("2.3", "https://raw.githubusercontent.com/Mark-RT/myUpdater/main/WiFiDMX3/project.json");
 
 #include <ESPDMX.h>
 DMXESPSerial dmx;
@@ -491,5 +491,8 @@ void loop()
         ota_timer = millis();
         checkUpdate();
     }
+
+    if ((millis() / 100) % 2)
+        dmx.update();
     sett.tick();
 }
