@@ -4,7 +4,7 @@
 bool config_error = false;
 
 #include <AutoOTA.h>
-AutoOTA ota("2.3", "https://raw.githubusercontent.com/Mark-RT/myUpdater/main/WiFiDMX3/project.json");
+AutoOTA ota("2.4", "https://raw.githubusercontent.com/Mark-RT/myUpdater/main/WiFiDMX3/project.json");
 
 #include <ESPDMX.h>
 DMXESPSerial dmx;
@@ -46,12 +46,14 @@ enum kk : size_t // ключи для хранения в базе данных
     apply,
 };
 
+unsigned long lastDMXUpdate = 0; // Переменная для хранения времени
+
 void setDMXColor(int startChannel, uint32_t color)
 {
     dmx.write(startChannel, (color >> 16) & 0xFF);    // R
     dmx.write(startChannel + 1, (color >> 8) & 0xFF); // G
     dmx.write(startChannel + 2, color & 0xFF);        // B
-    dmx.update();
+    // dmx.update();
 }
 
 void colorWheel(int startChannel, int color)
@@ -97,7 +99,7 @@ void colorWheel(int startChannel, int color)
     dmx.write(startChannel, 255 - r1);
     dmx.write(startChannel + 1, 255 - g1);
     dmx.write(startChannel + 2, 255 - b1);
-    dmx.update();
+    // dmx.update();
 }
 
 void resetDMXChannels()
@@ -106,7 +108,7 @@ void resetDMXChannels()
     {
         dmx.write(ch, 0);
     }
-    dmx.update();
+    // dmx.update();
 
     db.set(kk::rainbow_sw, 0);
 
@@ -179,7 +181,7 @@ void initDMXFromDB()
     dmx.write(18, db.get(kk::warm_white_sld));
     dmx.write(19, db.get(kk::cold_white_sld));
 
-    dmx.update();
+    // dmx.update();
 }
 
 void build(sets::Builder &b)
@@ -261,7 +263,7 @@ void build(sets::Builder &b)
             dmx.write(7, db.get(kk::rainbow_sld));
             dmx.write(15, db.get(kk::rainbow_sld));
             // Serial.println("Радуга відправляю значення ");
-            dmx.update();
+            // dmx.update();
         }
         else
         {
@@ -269,7 +271,7 @@ void build(sets::Builder &b)
             dmx.write(7, 0);
             dmx.write(15, 0);
             // Serial.println("Радуга виключаю");
-            dmx.update();
+            // dmx.update();
         }
         break;
 
@@ -278,7 +280,7 @@ void build(sets::Builder &b)
         // Serial.println(b.build.value);
         dmx.write(1, b.build.value);
         dmx.write(9, b.build.value);
-        dmx.update();
+        // dmx.update();
         break;
 
     case kk::color_mode:
@@ -334,7 +336,7 @@ void build(sets::Builder &b)
         // Serial.println(b.build.value);
         dmx.write(5, b.build.value);
         dmx.write(13, b.build.value);
-        dmx.update();
+        // dmx.update();
         break;
 
     case kk::rainbow_sld:
@@ -345,7 +347,7 @@ void build(sets::Builder &b)
             dmx.write(7, b.build.value);
             dmx.write(15, b.build.value);
             //  Serial.println("Радуга рухаю значення");
-            dmx.update();
+            // dmx.update();
         }
         break;
 
@@ -354,25 +356,25 @@ void build(sets::Builder &b)
         // Serial.println(b.build.value);
         dmx.write(6, b.build.value);
         dmx.write(14, b.build.value);
-        dmx.update();
+        // dmx.update();
         break;
 
     case kk::dimmer3_sld:
         // Serial.println("dimmer3");
         dmx.write(17, b.build.value);
-        dmx.update();
+        // dmx.update();
         break;
 
     case kk::warm_white_sld:
         // Serial.println("warm_white");
         dmx.write(18, b.build.value);
-        dmx.update();
+        // dmx.update();
         break;
 
     case kk::cold_white_sld:
         // Serial.println("cold_white");
         dmx.write(19, b.build.value);
-        dmx.update();
+        // dmx.update();
         break;
 
         /*case 0xB: // Назва WiFi мережі button
@@ -492,8 +494,11 @@ void loop()
         checkUpdate();
     }
 
-    if ((millis() / 100) % 2)
-        dmx.update();
-
     sett.tick();
+
+    if (millis() - lastDMXUpdate >= 100)
+    {
+        lastDMXUpdate = millis(); // Запоминаем текущее время
+        dmx.update();             // Отправляем DMX-пакет
+    }
 }
